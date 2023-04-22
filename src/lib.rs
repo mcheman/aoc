@@ -4,262 +4,467 @@ use std::num::Wrapping;
 use rayon::prelude::*;
 
 
-//24!
-// can simulate step by step, check current positions and yield set of positions that can be moved into for next time step. if those positions contain the end state, we're done
 
+fn get_decimal(snafu_num: &str) -> i64 {
+    let mut num: i64 = 0;
 
+    let mut base = 1;
 
-#[derive(Copy, Clone, Eq, Hash, PartialEq, Debug)]
-struct Pos {
-    x: u8,
-    y: u8,
-}
-
-// use these for example input
-// const INPUT_FILE: &str = "2022/input/24.example";
-// const WIDTH: u8 = 8;
-// const HEIGHT: u8 = 6;
-
-// use these for regular input
-const INPUT_FILE: &str = "2022/input/24";
-const WIDTH: u8 = 122;
-const HEIGHT: u8 = 27;
-
-
-
-// contains bitfield of tiles
-type Map = [[u8; HEIGHT as usize]; WIDTH as usize];
-
-fn load_map(filename: &str) -> Map {
-    let file = fs::read_to_string(filename).expect("Can't find file");
-
-    let mut map: Map = [[0; HEIGHT as usize]; WIDTH as usize];
-
-    let mut x: u8 = 0;
-    let mut y: u8 = 0;
-    for char in file.chars() {
-        let tile = match char {
-            '.' => 0,
-            '#' => 1,
-            '^' => 2,
-            'v' => 4,
-            '<' => 8,
-            '>' => 16,
-            '\n' => {
-                x = 0;
-                y += 1;
-                continue;
-            }
-            c => {
-                panic!("Found unknown character '{c}'");
-            }
+    for char in snafu_num.chars().rev() {
+        num += match char {
+            '2' => 2 * base,
+            '1' => base,
+            '-' => -1 * base,
+            '=' => -2 * base,
+            _ => 0
         };
 
-        map[x as usize][y as usize] = tile;
-        x += 1;
+        base *= 5;
     }
 
-    map
+    num
 }
 
-fn print(map: &Map) {
-    for y in 0..HEIGHT {
-        for x in 0..WIDTH {
-            print!("{}", match map[x as usize][y as usize] {
-                0 => '.',
-                1 => '#',
-                2 => '^',
-                4 => 'v',
-                8 => '<',
-                16 => '>',
-                _ => '*' // contains more than one tile
-            });
-        }
-        println!();
+fn get_snafu(decimal: i128) -> String {
+
+    // let mut start = 1;
+    // loop {
+    //     start *= 5;
+    //
+    //     if start < decimal {
+    //         continue;
+    //     }
+    //
+    //     if (start / 5 - decimal).abs() < (start - decimal).abs() {
+    //         start / 5
+    //     } else {
+    //         start
+    //     }
+    // }
+
+
+    // if number less than or equal to 2, add directly
+
+    // sn   d
+    // 1 -> 1   1
+    // 2 -> 2   2
+    // 1= -> 3  3
+    // 1- -> 4  4
+    // 10 -> 5  10
+    // 11 -> 6  11
+    // 12 -> 7  12
+    // 2= -> 8  13
+    // 2- -> 9  14
+    // 20 -> 10 20
+    // 21 -> 11 21
+    // 22 -> 12 22
+    // 1== -> 13    23
+    // 1=- -> 14
+    // 1=0 -> 15
+
+
+
+
+
+    // convert to base 5
+    let mut d = decimal;
+    let mut base5 = String::new();
+    while d > 0 {
+        let remainder = d % 5;
+        base5.push_str(&format!("{}", remainder));
+
+        d /= 5;
     }
-}
+    println!("DDDDDDD++++ {}", base5);
+    //
+    // base5;
+    //
+    // let mut num: [u8; 100];
+    // let mut i = 0;
+    // for char in base5 {
+    //     let mut n: i64 = char.parse();
+    //
+    //     if n > 2 {
+    //         n -= 5;
+    //         num
+    //     }
+    // }
+    //
 
-fn print_nodes(nodes: &HashSet<Pos>) {
-    println!("{:?}", nodes);
-}
+    let mut snafu = String::new();
+    let mut decimal = decimal;
 
-fn next_map(map: &Map) -> Map {
-    let mut new_map: Map = [[0; HEIGHT as usize]; WIDTH as usize];
+    while decimal > 0 {
+        let remainder = decimal % 5;
+        snafu.push_str(match remainder {
+            3 => "=",
+            4 => "-",
+            0 => "0",
+            1 => "1",
+            2 => "2",
+            _ => panic!("ah")
+        });
 
-    for y in 0..HEIGHT as usize {
-        // TODO assuming that the start and end spaces cannot have blizzards in them (inputs do not exhibit this)
-        // let space_before_left_wall = if map[0][y] == 0 { 0 } else { 1 };
-        // let space_before_right_wall = (if map[(WIDTH - 1) as usize][y] == 0 { WIDTH - 1 } else { WIDTH - 2 }) as usize;
-        let space_before_left_wall = 1;
-        let space_before_right_wall = (WIDTH - 2) as usize;
-
-        for x in 0..WIDTH as usize {
-            if map[x][y] == 0 { // skip over empty spaces, nothing to update
-                continue;
-            }
-
-            if map[x][y] == 1 { // copy over walls directly
-                new_map[x][y] = 1;
-                continue;
-            }
-
-
-            let space_before_top_wall = 1;
-            let space_before_bottom_wall = (HEIGHT - 2) as usize;
-
-
-            // there now must be one or more blizzards
-
-            // moving up
-            if map[x][y] & 2 != 0 {
-                if y == space_before_top_wall {
-                    new_map[x][space_before_bottom_wall] += 2; // wrap
-                } else {
-                    new_map[x][y - 1] += 2;
-                }
-            }
-
-            // moving down
-            if map[x][y] & 4 != 0 {
-                if y == space_before_bottom_wall {
-                    new_map[x][space_before_top_wall] += 4; // wrap
-                } else {
-                    new_map[x][y + 1] += 4;
-                }
-            }
-
-            // moving left
-            if map[x][y] & 8 != 0 {
-                if x == space_before_left_wall {
-                    new_map[space_before_right_wall][y] += 8; // wrap
-                } else {
-                    new_map[x - 1][y] += 8;
-                }
-            }
-
-            // moving right
-            if map[x][y] & 16 != 0 {
-                if x == space_before_right_wall {
-                    new_map[space_before_left_wall][y] += 16; // wrap
-                } else {
-                    new_map[x + 1][y] += 16;
-                }
-            }
-        }
+        decimal = (decimal + 2) / 5; // +2 to round up?
     }
 
-    new_map
+    snafu.chars().rev().collect::<String>()
+
+    // 23(5) === 13d
+    // 3 is bigger than 2, so subtract 2 (max digit) and carry 1. outputs =
+    // 2 + carry (1) is 3, so subtract 2 (max digit) and carry 1. outputs =
+    // no digit + carry (1) is less than 2, outputs 1
+    // DOESN'T work
+
+    // 214(5) == 107d   ==   1-12 == 125 - 25 + 5 + 2
+    // find abs closest 5^2 * 1, 2, -1, or -2
+    // use as first digit
+    // subtract value from decimal
+
+    // find largest multiple of 5^n
+    // fn closest(d: i64) -> (u32, i64) {
+    //     let mut n = 0;
+    //
+    //     let d = d.abs();
+    //
+    //     loop {
+    //         let two= 5_i64.pow(n) * 2;
+    //         let one = 5_i64.pow(n) * 1;
+    //         let onemore = 5_i64.pow(n + 1) * 2;
+    //         let twomore = 5_i64.pow(n + 1) * 1;
+    //
+    //         // are we straddling too high and too low? If not, increase and try again
+    //         if onemore < d && twomore < d {
+    //             n += 1;
+    //             continue;
+    //         }
+    //
+    //         // (multiplied value, n)
+    //         let closest = [
+    //             (two, (two - d).abs(), 2),
+    //             (twomore, (twomore - d).abs(), 2),
+    //             (onemore, (onemore - d).abs(), 1)
+    //         ].into_iter()
+    //             .fold((one, (one - d).abs(), 1), |acc, other| {
+    //             if acc.1 < other.1 {
+    //                 acc
+    //             } else {
+    //                 other
+    //             }
+    //         });
+    //
+    //         println!("n: {}, closest: {}, distance: {}", n * closest.2, closest.0, closest.1);
+    //         return (n * closest.2, closest.0);
+    //     }
+    // };
+
+
+
+
+    // let mut snafu = String::new();
+    // snafu.push_str(&format!("_{:?}", closest(decimal)));
+    // snafu
 }
 
-fn neighbors(map: &Map, nodes: &HashSet<Pos>) -> HashSet<Pos>{
 
-    let mut new_nodes = HashSet::new();
+pub fn twenty_five() {
+    let file = fs::read_to_string("2022/input/25").expect("Can't find file");
 
-    for node in nodes {
-        let neighbors = [
-            *node, // self
-            Pos{y: node.y - 1, ..*node }, // up
-            Pos{y: node.y + 1, ..*node }, // down
-            Pos{x: node.x - 1, ..*node }, // left
-            Pos{x: node.x + 1, ..*node }, // right
-        ];
+    let mut total: i128 = 0;
 
-        for n in neighbors {
-            if let Some(col) = map.get(n.x as usize) {
-                if let Some(tile) = col.get(n.y as usize) {
-                    if *tile == 0 {
-                        new_nodes.insert(n);
-                    }
-                }
-            }
-        }
+    for line in file.lines() {
+        // println!("{}\t{}\t{}", line, get_decimal(line), get_snafu(get_decimal(line)));
+        total += get_decimal(line) as i128;
+        println!("{total}");
     }
 
-    // Remove starting place since it always generates itself as a neighbor if it was a node
-    // new_nodes.remove(&Pos { x: 1, y: 0 });
+    println!("SNAFU: {}", get_snafu(total));
+    println!("Decimal SNAFU: {}", get_decimal(&get_snafu(total)));
 
-    new_nodes
+    // 34182852926025
+    // let mut snafu = String::from("0");
+    // for _i in 0..1000000 {
+    //     snafu.as_bytes()[0] + 1
+    // }
+
+   //
+   //107
+   //110101_1 -> 1
+   //11010_11 ->
+   //
+   //
+   //
+   //
+   //
+   //
+   //
+   //
+   //
+   //
+   //
+   //
+   //
+   //
+
 }
 
-pub fn twenty_four() {
-    let mut map = load_map(INPUT_FILE);
-    // let initial_map = map.clone();
-    print(&map);
 
-    let mut have_snacks = false;
-
-    let starting_node = Pos { x: 1, y: 0 };
-    let goal_node = Pos { x: WIDTH - 2, y: HEIGHT - 1 };
-
-    let mut nodes = HashSet::new();
-    nodes.insert(starting_node);
-
-    for i in 1..=6000 {
-        println!("\nMinute {i}!");
-        map = next_map(&map);
-        // print(&map);
-
-        nodes = neighbors(&map, &nodes);
-        // print_nodes(&nodes);
-
-        if nodes.iter().filter(|&n| *n == goal_node).count() > 0 {
-            println!("FOUND PATH BABY! First Run");
-
-            // go back to start
-            nodes.clear();
-            nodes.insert(goal_node);
-
-            for ii in i+1..=6000 {
-                println!("\nMinute {ii}!");
-                map = next_map(&map);
-                nodes = neighbors(&map, &nodes);
-
-                if nodes.iter().filter(|&n| *n == starting_node).count() > 0 {
-                    println!("FOUND PATH BABY! Back at start");
-
-                    // go back to end
-                    nodes.clear();
-                    nodes.insert(starting_node);
-
-                    for iii in ii+1..=6000 {
-                        println!("\nMinute {iii}!");
-                        map = next_map(&map);
-                        nodes = neighbors(&map, &nodes);
-
-                        if nodes.iter().filter(|&n| *n == goal_node).count() > 0 {
-                            println!("FOUND PATH BABY! DONE!");
-                            return;
-                        }
-                    }
-
-                }
-            }
-        }
-
-        // let mut found_match = true;
-
-        // check if matches initial state to find out what period is
-        // period is least common multiple of dimensions inside walls!! 600 for regular input, 12 for example
-        // for y in 0..HEIGHT as usize {
-        //     for x in 0..WIDTH as usize {
-        //         if map[x][y] != initial_map[x][y] {
-        //             found_match = false;
-        //             break;
-        //         }
-        //     }
-        //
-        //     if !found_match {
-        //         break;
-        //     }
-        // }
-        //
-        // if found_match {
-        //     println!("Found Match!!!");
-        //     break;
-        // }
-
-    }
-}
+//24!
+// can simulate step by step, check current positions and yield set of positions that can be moved into for next time step. if those positions contain the end state, we're done
+//
+//
+//
+// #[derive(Copy, Clone, Eq, Hash, PartialEq, Debug)]
+// struct Pos {
+//     x: u8,
+//     y: u8,
+// }
+//
+// // use these for example input
+// // const INPUT_FILE: &str = "2022/input/24.example";
+// // const WIDTH: u8 = 8;
+// // const HEIGHT: u8 = 6;
+//
+// // use these for regular input
+// const INPUT_FILE: &str = "2022/input/24";
+// const WIDTH: u8 = 122;
+// const HEIGHT: u8 = 27;
+//
+//
+//
+// // contains bitfield of tiles
+// type Map = [[u8; HEIGHT as usize]; WIDTH as usize];
+//
+// fn load_map(filename: &str) -> Map {
+//     let file = fs::read_to_string(filename).expect("Can't find file");
+//
+//     let mut map: Map = [[0; HEIGHT as usize]; WIDTH as usize];
+//
+//     let mut x: u8 = 0;
+//     let mut y: u8 = 0;
+//     for char in file.chars() {
+//         let tile = match char {
+//             '.' => 0,
+//             '#' => 1,
+//             '^' => 2,
+//             'v' => 4,
+//             '<' => 8,
+//             '>' => 16,
+//             '\n' => {
+//                 x = 0;
+//                 y += 1;
+//                 continue;
+//             }
+//             c => {
+//                 panic!("Found unknown character '{c}'");
+//             }
+//         };
+//
+//         map[x as usize][y as usize] = tile;
+//         x += 1;
+//     }
+//
+//     map
+// }
+//
+// fn print(map: &Map) {
+//     for y in 0..HEIGHT {
+//         for x in 0..WIDTH {
+//             print!("{}", match map[x as usize][y as usize] {
+//                 0 => '.',
+//                 1 => '#',
+//                 2 => '^',
+//                 4 => 'v',
+//                 8 => '<',
+//                 16 => '>',
+//                 _ => '*' // contains more than one tile
+//             });
+//         }
+//         println!();
+//     }
+// }
+//
+// fn print_nodes(nodes: &HashSet<Pos>) {
+//     println!("{:?}", nodes);
+// }
+//
+// fn next_map(map: &Map) -> Map {
+//     let mut new_map: Map = [[0; HEIGHT as usize]; WIDTH as usize];
+//
+//     for y in 0..HEIGHT as usize {
+//         // TODO assuming that the start and end spaces cannot have blizzards in them (inputs do not exhibit this)
+//         // let space_before_left_wall = if map[0][y] == 0 { 0 } else { 1 };
+//         // let space_before_right_wall = (if map[(WIDTH - 1) as usize][y] == 0 { WIDTH - 1 } else { WIDTH - 2 }) as usize;
+//         let space_before_left_wall = 1;
+//         let space_before_right_wall = (WIDTH - 2) as usize;
+//
+//         for x in 0..WIDTH as usize {
+//             if map[x][y] == 0 { // skip over empty spaces, nothing to update
+//                 continue;
+//             }
+//
+//             if map[x][y] == 1 { // copy over walls directly
+//                 new_map[x][y] = 1;
+//                 continue;
+//             }
+//
+//
+//             let space_before_top_wall = 1;
+//             let space_before_bottom_wall = (HEIGHT - 2) as usize;
+//
+//
+//             // there now must be one or more blizzards
+//
+//             // moving up
+//             if map[x][y] & 2 != 0 {
+//                 if y == space_before_top_wall {
+//                     new_map[x][space_before_bottom_wall] += 2; // wrap
+//                 } else {
+//                     new_map[x][y - 1] += 2;
+//                 }
+//             }
+//
+//             // moving down
+//             if map[x][y] & 4 != 0 {
+//                 if y == space_before_bottom_wall {
+//                     new_map[x][space_before_top_wall] += 4; // wrap
+//                 } else {
+//                     new_map[x][y + 1] += 4;
+//                 }
+//             }
+//
+//             // moving left
+//             if map[x][y] & 8 != 0 {
+//                 if x == space_before_left_wall {
+//                     new_map[space_before_right_wall][y] += 8; // wrap
+//                 } else {
+//                     new_map[x - 1][y] += 8;
+//                 }
+//             }
+//
+//             // moving right
+//             if map[x][y] & 16 != 0 {
+//                 if x == space_before_right_wall {
+//                     new_map[space_before_left_wall][y] += 16; // wrap
+//                 } else {
+//                     new_map[x + 1][y] += 16;
+//                 }
+//             }
+//         }
+//     }
+//
+//     new_map
+// }
+//
+// fn neighbors(map: &Map, nodes: &HashSet<Pos>) -> HashSet<Pos>{
+//
+//     let mut new_nodes = HashSet::new();
+//
+//     for node in nodes {
+//         let neighbors = [
+//             *node, // self
+//             Pos{y: node.y - 1, ..*node }, // up
+//             Pos{y: node.y + 1, ..*node }, // down
+//             Pos{x: node.x - 1, ..*node }, // left
+//             Pos{x: node.x + 1, ..*node }, // right
+//         ];
+//
+//         for n in neighbors {
+//             if let Some(col) = map.get(n.x as usize) {
+//                 if let Some(tile) = col.get(n.y as usize) {
+//                     if *tile == 0 {
+//                         new_nodes.insert(n);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//
+//     // Remove starting place since it always generates itself as a neighbor if it was a node
+//     // new_nodes.remove(&Pos { x: 1, y: 0 });
+//
+//     new_nodes
+// }
+//
+// pub fn twenty_four() {
+//     let mut map = load_map(INPUT_FILE);
+//     // let initial_map = map.clone();
+//     print(&map);
+//
+//     let mut have_snacks = false;
+//
+//     let starting_node = Pos { x: 1, y: 0 };
+//     let goal_node = Pos { x: WIDTH - 2, y: HEIGHT - 1 };
+//
+//     let mut nodes = HashSet::new();
+//     nodes.insert(starting_node);
+//
+//     for i in 1..=6000 {
+//         println!("\nMinute {i}!");
+//         map = next_map(&map);
+//         // print(&map);
+//
+//         nodes = neighbors(&map, &nodes);
+//         // print_nodes(&nodes);
+//
+//         if nodes.iter().filter(|&n| *n == goal_node).count() > 0 {
+//             println!("FOUND PATH BABY! First Run");
+//
+//             // go back to start
+//             nodes.clear();
+//             nodes.insert(goal_node);
+//
+//             for ii in i+1..=6000 {
+//                 println!("\nMinute {ii}!");
+//                 map = next_map(&map);
+//                 nodes = neighbors(&map, &nodes);
+//
+//                 if nodes.iter().filter(|&n| *n == starting_node).count() > 0 {
+//                     println!("FOUND PATH BABY! Back at start");
+//
+//                     // go back to end
+//                     nodes.clear();
+//                     nodes.insert(starting_node);
+//
+//                     for iii in ii+1..=6000 {
+//                         println!("\nMinute {iii}!");
+//                         map = next_map(&map);
+//                         nodes = neighbors(&map, &nodes);
+//
+//                         if nodes.iter().filter(|&n| *n == goal_node).count() > 0 {
+//                             println!("FOUND PATH BABY! DONE!");
+//                             return;
+//                         }
+//                     }
+//
+//                 }
+//             }
+//         }
+//
+//         // let mut found_match = true;
+//
+//         // check if matches initial state to find out what period is
+//         // period is least common multiple of dimensions inside walls!! 600 for regular input, 12 for example
+//         // for y in 0..HEIGHT as usize {
+//         //     for x in 0..WIDTH as usize {
+//         //         if map[x][y] != initial_map[x][y] {
+//         //             found_match = false;
+//         //             break;
+//         //         }
+//         //     }
+//         //
+//         //     if !found_match {
+//         //         break;
+//         //     }
+//         // }
+//         //
+//         // if found_match {
+//         //     println!("Found Match!!!");
+//         //     break;
+//         // }
+//
+//     }
+// }
 
 
 // type Map = HashMap<Pos, Elf>;
